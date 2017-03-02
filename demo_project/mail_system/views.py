@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from mail_system.models import RegisteredUsers, Mail, UserMails
 from mail_system.spamfilter import SpamFilter as sf
+import pickle
 
 @login_required
 def restricted(request):
@@ -39,7 +40,7 @@ def register(request):
             print (user_form.errors, registered_users_form.errors)
 
     else:
-        request.session['classifier'] = SpamFilter.main()
+        #sf.main()
         user_form = UserForm()
         registered_users_form = RegisteredUsersForm()
 
@@ -82,7 +83,7 @@ def compose(request):
         mail_form = MailForm()
     return render(request, 'compose.html',{'mail_form': mail_form })
 
-
+@login_required
 def mail_sent(request):
     if request.method == 'POST':
         mail_form = MailForm(data = request.POST) 
@@ -94,7 +95,9 @@ def mail_sent(request):
             to_user = User.objects.get(email = to_email)
             from_user = User.objects.get(username = request.user.username)
             if to_user and from_user:
-                classifier = request.session.get('classifier')
+                f = open('my_classifier.pickle', 'rb')
+                classifier = pickle.load(f)
+                f.close()
                 text = mail.subject+" "+mail.content    
                 features = sf.get_features(text,'dummy')
                 mail.is_spam = classifier.classify(features)
@@ -105,6 +108,7 @@ def mail_sent(request):
             print(mail_form.errors)
     return render(request, 'mail_sent.html')
 
+@login_required
 def inbox(request):
     if request.method == 'GET':
         current_user = request.user
@@ -113,6 +117,20 @@ def inbox(request):
         for record in records:
             from_user = User.objects.get(id=record.sender_id)
             mail = Mail.objects.get(id=record.mail_id)
-            mails.append(mail)
+            if mail.is_spam == False:
+                mails.append(mail)
+        return render(request,
+            'mail_system/inbox.html', {'current_user': current_user, 'records': records , 'mails':mails , 'from_user':from_user})
+
+def spam(request): 
+    if request.method == 'GET':
+        current_user = request.user
+        records = UserMails.objects.filter(receiver_id=current_user.id) 
+        mails = []
+        for record in records:
+            from_user = User.objects.get(id=record.sender_id)
+            mail = Mail.objects.get(id=record.mail_id)
+            if mail.is_spam:
+                mails.append(mail)
         return render(request,
             'mail_system/inbox.html', {'current_user': current_user, 'records': records , 'mails':mails , 'from_user':from_user})
